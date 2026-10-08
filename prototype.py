@@ -1,10 +1,10 @@
 import streamlit as st
-
 import numpy as np
-
 import matplotlib.pyplot as plt
-
-from math import erf, sqrt
+import altair as alt
+import pandas as pd
+from math import erf, erfc, sqrt
+from statistics import NormalDist
 from contextlib import contextmanager
 
 
@@ -48,7 +48,7 @@ def open_learning_section(panel_key):
 
 def reset_keys(*keys):
     """
-    Reset session-state values when the learner changes an answer.
+    Reset session state values when the learner changes an answer.
     This prevents old feedback from remaining visible.
     """
     for key in keys:
@@ -57,6 +57,149 @@ def reset_keys(*keys):
 
 def normal_cdf(value):
     return 0.5 * (1 + erf(value / sqrt(2)))
+
+
+def coin_test_results(heads, sample_size, alpha=0.05):
+    """Calculate the lesson's two-sided normal approximation under H₀."""
+    proportion = heads / sample_size
+    standard_error = sqrt(0.25 / sample_size)
+    z = (proportion - 0.5) / standard_error
+    p_value = erfc(abs(z) / sqrt(2))
+    return proportion, standard_error, z, p_value, p_value <= alpha
+
+
+def resize_coin_sample(prefix):
+    """Preserve the observed proportion when the sample size changes."""
+    previous_n = st.session_state[f"{prefix}_previous_n"]
+    new_n = st.session_state[f"{prefix}_n"]
+    proportion = st.session_state.get(
+        f"{prefix}_heads", round(previous_n * 0.6)) / previous_n
+    st.session_state[f"{prefix}_heads"] = round(proportion * new_n)
+    st.session_state[f"{prefix}_previous_n"] = new_n
+
+
+def coin_distribution_chart(z, alpha=None):
+    """Draw the normal curve with observed tails and optional α cutoffs."""
+    extent = max(4.0, abs(z) + 0.5)
+    critical = NormalDist().inv_cdf(1 - alpha / 2) if alpha is not None else None
+    boundaries = [-abs(z), abs(z)]
+    if critical is not None:
+        boundaries += [-critical, critical]
+    x = np.unique(np.concatenate(
+        [np.linspace(-extent, extent, 1000), boundaries]))
+    frame = pd.DataFrame({
+        "Z-score": x,
+        "Density": np.exp(-0.5 * x**2) / sqrt(2 * np.pi),
+        "side": np.where(x < 0, "left", "right"),
+    })
+    base = alt.Chart(frame).encode(
+        x=alt.X("Z-score:Q", scale=alt.Scale(domain=[-extent, extent])),
+        y=alt.Y("Density:Q", scale=alt.Scale(domain=[0, 0.42])),
+        tooltip=[alt.Tooltip("Z-score:Q", format=".2f"),
+                 alt.Tooltip("Density:Q", format=".4f")],
+    )
+    layers = []
+    if critical is not None:
+        rejection = (alt.datum["Z-score"] <= -
+                     critical) | (alt.datum["Z-score"] >= critical)
+        layers.append(base.transform_filter(rejection).mark_area(
+            color="#A78BFA", opacity=0.3).encode(detail="side:N"))
+        tails = (alt.datum["Z-score"] <= -abs(z)
+                 ) | (alt.datum["Z-score"] >= abs(z))
+        layers.append(base.transform_filter(tails).mark_area(
+            color="#FBBF24", opacity=0.55).encode(detail="side:N"))
+    layers.append(base.mark_line(color="#60A5FA", strokeWidth=3))
+    layers.append(alt.Chart(pd.DataFrame({"Z-score": [0]})).mark_rule(
+        color="#94A3B8", strokeDash=[4, 4]).encode(x="Z-score:Q"))
+    if critical is not None:
+        layers.append(alt.Chart(pd.DataFrame({"Z-score": [-critical, critical]})).mark_rule(
+            color="#A78BFA", strokeDash=[6, 4]).encode(x="Z-score:Q"))
+    markers = [z] if alpha is None else sorted(set([-abs(z), abs(z)]))
+    layers.append(alt.Chart(pd.DataFrame({"Z-score": markers})).mark_rule(
+        color="#FBBF24", strokeWidth=2).encode(x="Z-score:Q", tooltip=alt.Tooltip("Z-score:Q", format=".2f")))
+    return alt.layer(*layers).properties(height=300)
+
+
+def render_alpha_explanation():
+    """Explain how α is chosen and what its error rate means."""
+    st.subheader("Choosing the significance level α")
+    st.markdown(
+        "In hypothesis testing, the **significance level is chosen before "
+        "examining the results**. The most commonly used value is **α = 0.05**."
+    )
+    st.markdown(
+        "This means we are willing to accept a **5% probability of a Type I "
+        "error**: rejecting H₀ when it is actually true. If H₀ is true, about "
+        "5% of repeated tests would reject it at this level. We will explore "
+        "Type I errors further in **Step 6**."
+    )
+    st.markdown(
+        "**Common significance levels**\n\n"
+        "| Significance level | Risk of a Type I error when H₀ is true |\n"
+        "|---|---|\n"
+        "| α = 0.10 | 10% risk |\n"
+        "| α = 0.05 | 5% risk · most common |\n"
+        "| α = 0.01 | 1% risk · stricter |"
+    )
+    st.info(
+        "Try α = 0.10, 0.05, and 0.01 and watch the **purple rejection "
+        "regions** change. A smaller α makes them narrower, requiring "
+        "stronger evidence to reject H₀. Then change the number of Heads "
+        "to change the p-value and the **gold shaded tails**. Changing α "
+        "here is an exploration exercise; in a real test, choose it in advance."
+    )
+
+
+def render_coin_explorer(prefix, show_inference=False, explain_alpha=False):
+    """Render a reusable experiment without changing the worked examples."""
+    st.caption(
+        "Experiment freely here. Lesson questions use the original 60 Heads out of 100.")
+    sample_size = st.slider(
+        "Sample size (number of flips)", 20, 1000, 100, step=20,
+        key=f"{prefix}_n", on_change=resize_coin_sample, args=(prefix,),
+    )
+    st.session_state[f"{prefix}_previous_n"] = sample_size
+    heads_key = f"{prefix}_heads"
+    if heads_key not in st.session_state:
+        st.session_state[heads_key] = round(sample_size * 0.6)
+    heads = st.slider(
+        f"Number of Heads out of {sample_size}", 0, sample_size, key=heads_key)
+    if show_inference and explain_alpha:
+        render_alpha_explanation()
+    alpha = st.slider(
+        "Significance level α", 0.01, 0.10, 0.05, step=0.01,
+        key=f"{prefix}_alpha", format="%.2f",
+    ) if show_inference else 0.05
+    proportion, se, z, p_value, reject = coin_test_results(
+        heads, sample_size, alpha)
+    columns = st.columns(3)
+    columns[0].metric("Observed proportion", f"{proportion:.3f}")
+    columns[1].metric("Standard error", f"{se:.4f}")
+    columns[2].metric("Z-score", f"{z:.2f}")
+    st.altair_chart(
+        coin_distribution_chart(z, alpha if show_inference else None),
+        width="stretch",
+        alt=f"Normal curve under H₀ with the observed result at Z = {z:.2f}." + (
+            f" Shaded tails show p = {p_value:.4g}; purple boundaries show α = {alpha:.2f}."
+            if show_inference else ""
+        ),
+    )
+    if show_inference:
+        st.caption(
+            "Gold: outcomes at least as extreme as your result (p-value). Purple: rejection regions set by α. Dashed gray: H₀ at Z = 0.")
+        metrics = st.columns(2)
+        metrics[0].metric(
+            "Two-sided p-value", f"{p_value:.4f}" if p_value >= 0.0001 else f"{p_value:.2e}")
+        metrics[1].metric("Significance level α", f"{alpha:.2f}")
+        if reject:
+            st.success(
+                f"Reject H₀: p = {p_value:.4g} ≤ α = {alpha:.2f}. This sample provides evidence against a fair coin.")
+        else:
+            st.info(
+                f"Fail to reject H₀: p = {p_value:.4g} > α = {alpha:.2f}. This sample does not provide enough evidence against a fair coin.")
+        st.caption("Changing α moves the decision boundary; it does not change the p-value. Values use the normal approximation taught in this activity.")
+    else:
+        st.caption("Gold: your observed Z-score. Dashed gray: H₀ at Z = 0. Increase the sample size to see how the same proportion moves farther from zero.")
 
 
 def navigation_buttons(show_continue=True):
@@ -143,7 +286,7 @@ def render_introduction():
         """
         In this activity, you'll investigate a coin using statistical evidence.
 
-        Along the way, you'll learn how **hypothesis testing** works —
+        Along the way, you'll learn how **hypothesis testing** works starting from
         from understanding samples all the way to making a statistical decision.
         """
     )
@@ -204,7 +347,7 @@ def render_introduction():
 def render_data_step():
     """Render step 1 and its answer checks."""
 
-    st.title("Step 1 — Understanding the Data")
+    st.title("Step 1: Understanding the Data")
 
     st.write(
         """
@@ -567,7 +710,7 @@ def render_data_step():
 def render_hypotheses_step():
     """Render step 2 and its answer checks."""
 
-    st.title("Step 2 — Form Your Hypotheses")
+    st.title("Step 2: Form Your Hypotheses")
 
     st.write(
         """
@@ -825,7 +968,7 @@ def render_hypotheses_step():
 def render_test_statistic_step():
     """Render Step 3: Explore and understand the Z-score."""
 
-    st.title("Step 3 — How far is our result from H₀?")
+    st.title("Step 3: How far is our result from H₀?")
 
     # --------------------------------------------------------
     # Introduction: Why do we need a Z-score?
@@ -875,90 +1018,17 @@ def render_test_statistic_step():
 
         st.write(
             """
-            Move the slider to change the number of Heads.
+            Change the number of Heads or the sample size.
 
-            Try **50, 55, 60, and 65 Heads**.
+            With **100 flips**, try **50, 55, 60, and 65 Heads**.
 
             Watch how the Z-score and its position on the
-            distribution change.
+            distribution change. Changing the sample size keeps
+            approximately the same observed proportion.
             """
         )
 
-        heads = st.slider(
-            "Number of Heads out of 100",
-            min_value=35,
-            max_value=65,
-            value=60,
-            key="z_heads"
-        )
-
-        p0 = 0.5
-        n = 100
-        p_hat = heads / n
-        se = np.sqrt(p0 * (1 - p0) / n)
-        z = (p_hat - p0) / se
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric("Heads", heads)
-
-        with col2:
-            st.metric("Observed proportion", f"{p_hat:.2f}")
-
-        with col3:
-            st.metric("Z-score", f"{z:.2f}")
-
-        # Normal distribution visualization
-
-        x = np.linspace(-4, 4, 500)
-        y = (1 / np.sqrt(2 * np.pi)) * np.exp(-0.5 * x**2)
-
-        fig, ax = plt.subplots()
-
-        ax.plot(
-            x, y,
-            color="steelblue",
-            linewidth=2,
-            label="Distribution under H₀"
-        )
-
-        ax.axvline(
-            0,
-            color="gray",
-            linestyle="--",
-            linewidth=2,
-            label="H₀ prediction (Z = 0)"
-        )
-
-        ax.axvline(
-            z,
-            color="darkorange",
-            linewidth=2,
-            label=f"Your result (Z = {z:.2f})"
-        )
-
-        ax.scatter(
-            [z],
-            [(1 / np.sqrt(2 * np.pi)) * np.exp(-0.5 * z**2)],
-            color="darkorange",
-            s=70,
-            zorder=5
-        )
-
-        ax.set_xlabel("Z-score")
-        ax.set_ylabel("Density")
-        ax.set_xlim(-4, 4)
-        ax.set_title("Where does your result fall?")
-        ax.legend(fontsize=8)
-
-        st.pyplot(fig)
-        plt.close(fig)
-
-        st.caption(
-            "The dashed line represents what H₀ predicts. "
-            "The orange line represents your observed result."
-        )
+        render_coin_explorer("z_experiment")
 
         # ----------------------------------------------------
         # 2. Prediction question
@@ -1100,7 +1170,7 @@ def render_test_statistic_step():
             )
 
             if st.button(
-                "I understand — continue to practice →",
+                "I understand. Let's continue to practice →",
                 key="z_explanation_done"
             ):
                 st.session_state.z_explanation_complete = True
@@ -1238,7 +1308,7 @@ def render_pvalue_step():
     """Render step 4 and its answer checks."""
 
     st.title(
-        "Step 4 — How surprising is this result under H₀?"
+        "Step 4: How surprising is this result under H₀?"
     )
 
     st.write(
@@ -1381,108 +1451,13 @@ def render_pvalue_step():
         "pvalue_interpretation_correct"
     ):
 
-        with learning_section('Visualize the two-sided p-value', 'coffee_z_correct', 'For Z = 2, the two tails give p ≈ 0.0455.'):
+        with learning_section('Visualize the two-sided p-value', 'coffee_z_correct', 'The two-sided p-value includes outcomes in both tails.'):
             st.subheader(
                 "Visualizing the p-value"
             )
 
-            x = np.linspace(
-                -4,
-                4,
-                500
-            )
-
-            y = (
-                1 / np.sqrt(2 * np.pi)
-            ) * np.exp(
-                -0.5 * x ** 2
-            )
-
-            fig, ax = plt.subplots()
-
-            ax.plot(
-                x,
-                y
-            )
-
-            ax.axvline(
-                z,
-                linestyle="--"
-            )
-
-            ax.axvline(
-                -z,
-                linestyle="--"
-            )
-
-            left_tail = (
-                x <= -abs(z)
-            )
-
-            right_tail = (
-                x >= abs(z)
-            )
-
-            ax.fill_between(
-                x[left_tail],
-                y[left_tail],
-                alpha=0.4
-            )
-
-            ax.fill_between(
-                x[right_tail],
-                y[right_tail],
-                alpha=0.4
-            )
-
-            ax.set_xlim(
-                -4,
-                4
-            )
-
-            ax.set_xlabel(
-                "Z-score"
-            )
-
-            ax.set_ylabel(
-                "Density"
-            )
-
-            ax.set_title(
-                "Results this extreme or more extreme"
-            )
-
-            st.pyplot(fig)
-
-            plt.close(fig)
-
-            st.write(
-                """
-                The shaded regions represent outcomes that are at least
-                as extreme as our observed result.
-
-                Since this is a two-sided test, we include **both tails**.
-                """
-            )
-
-            p_value = (
-                2 * (
-                    1 - normal_cdf(abs(z))
-                )
-            )
-
-            st.metric(
-                "p-value",
-                f"{p_value:.4f}"
-            )
-
-            st.write(
-                f"""
-                If the coin were truly fair, a result this extreme
-                or more extreme would occur about
-                **{p_value * 100:.1f}% of the time**.
-                """
-            )
+            render_coin_explorer("pvalue_experiment",
+                                 show_inference=True, explain_alpha=True)
 
         # ----------------------------------------------------
         # Coffee machine exercise
@@ -1796,7 +1771,7 @@ def render_significance_step():
     """Render step 5 and its answer checks."""
 
     st.title(
-        "Step 5 — Is the p-value small enough?"
+        "Step 5: Is the p-value small enough?"
     )
 
     st.write(
@@ -1840,6 +1815,9 @@ def render_significance_step():
         r"\Rightarrow "
         r"\text{Fail to reject } H_0"
     )
+
+    with st.expander("Experiment: how do p-value and α change the decision?"):
+        render_coin_explorer("decision_experiment", show_inference=True)
 
     # --------------------------------------------------------
     # Coin decision
@@ -2035,7 +2013,7 @@ def render_errors_step():
     """Render step 6 and its answer checks."""
 
     st.title(
-        "Step 6 — What if our decision is wrong?"
+        "Step 6: What if our decision is wrong?"
     )
 
     st.write(
@@ -2324,7 +2302,7 @@ def render_power_step():
     """Render step 7 and its answer checks."""
 
     st.title(
-        "Step 7 — Can our test detect a real effect?"
+        "Step 7: Can our test detect a real effect?"
     )
 
     st.write(
@@ -2398,8 +2376,8 @@ def render_power_step():
         )
 
         st.write(
-            """
-            where \(\beta\) is the probability of making a Type II error.
+            r"""
+            where $\beta$ is the probability of making a Type II error.
 
             **High power means a high probability of detecting
             a real effect.**
@@ -2505,7 +2483,7 @@ def render_final_challenge():
     """Render step 8 and its answer checks."""
 
     st.title(
-        "Step 8 — Final Challenge"
+        "Step 8: Final Challenge"
     )
 
     st.write(
