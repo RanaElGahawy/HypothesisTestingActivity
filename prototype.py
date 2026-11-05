@@ -705,7 +705,7 @@ an AI tutor. Data are linked only to a participant code, not to your name.
 without giving a reason, and ask us to delete your data. The data are used
 only for the CS-411 Digital Education course project.
 
-**Contact.** DRAFT: team names and EPFL e-mail addresses.
+**Contact:**  Mattéo Le Cué - matteo.lecue@epfl.ch, Omar Idrissi - omar.idrissikaitouni@epfl.ch, Rana ElGahawy - rana.elgahawy@epfl.ch
 """
 
 CONSENT_LABEL = (
@@ -988,7 +988,6 @@ def render_end_step():
     st.caption(
         f"Participant code: {st.session_state.study['participant_id']}"
     )
-
 
 
 @contextmanager
