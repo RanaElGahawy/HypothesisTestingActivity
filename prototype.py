@@ -640,10 +640,13 @@ def render_ai_tutor_chat(prompt_id, state, interactive):
     if learner_replies < MAX_LEARNER_REPLIES:
         with st.container():
             message = st.chat_input(
-                f"Reply to the tutor ({MAX_LEARNER_REPLIES - learner_replies}"
-                " left), or continue below",
+                "Reply or ask the tutor a question, then press ↑ "
+                f"({MAX_LEARNER_REPLIES - learner_replies} left)",
                 key=f"ft_{prompt_id}_chat_input",
             )
+        st.caption("The ↑ arrow (or Enter) sends your message to the "
+                   "tutor. When you are ready, revise your answer below: "
+                   "this ends the chat.")
         if message and message.strip():
             state["chat"].append({"role": "user",
                                   "content": message.strip()})
@@ -699,9 +702,12 @@ def render_free_text_activity(prompt_id):
         feedback_ready = True
 
     if state["stage"] == "feedback":
-        if st.button("Continue: revise my answer",
+        # AI version: secondary style so the chat box stands out more.
+        if st.button("Done with the tutor: revise my answer"
+                     if condition == "ai" else "Continue: revise my answer",
                      key=f"ft_{prompt_id}_to_revise",
-                     type="primary", disabled=not feedback_ready):
+                     type="secondary" if condition == "ai" else "primary",
+                     disabled=not feedback_ready):
             st.session_state[f"ft_{prompt_id}_revised"] = state["first"]
             state["stage"] = "revise"
             st.rerun()
@@ -712,6 +718,9 @@ def render_free_text_activity(prompt_id):
         revise_key = f"ft_{prompt_id}_revised"
         if revise_key not in st.session_state:
             st.session_state[revise_key] = state["first"]
+        st.caption("Rewrite your answer using the feedback. Your first "
+                   "answer is copied below so you can edit it. You revise "
+                   "once, then you see the model answer.")
         revised = st.text_area("Revise your answer", key=revise_key,
                                height=120)
         if st.button("Submit revised answer",
