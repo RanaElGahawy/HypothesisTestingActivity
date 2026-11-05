@@ -331,32 +331,44 @@ MISCONCEPTIONS = {
     "P_H0": (
         "p is the probability that H₀ is true",
         "There is a 4.6% chance the coin is fair.",
+        "what is assumed about H₀ when p is computed (so p cannot be the "
+        "probability that H₀ is true)",
     ),
     "CHANCE": (
         "p is the probability that the result is a fluke / due to chance",
         "4.6% chance we got 60 heads by luck.",
+        "what 'just luck' means: p already assumes that only chance is at "
+        "work (H₀ true); not the 'exactly vs. more extreme' issue",
     ),
     "ONE_MINUS_P": (
         "1 − p is the probability that H₁ is true",
         "95.4% sure the coin is biased.",
+        "what 1 − p actually describes: p is about the data under H₀, "
+        "not a probability that H₁ is true",
     ),
     "NO_CONDITION": (
         "right idea, but forgets that p is computed assuming H₀ is true",
         "The probability of getting 60 heads or more.",
+        "the missing condition: under which assumption the probability "
+        "is computed",
     ),
     "NO_EXTREME": (
         "right idea, but forgets 'or more extreme' (talks about exactly "
         "this result)",
         "If the coin is fair, the chance of exactly 60 heads.",
+        "the word 'exactly': which other outcomes also count",
     ),
     "HARD_THRESHOLD": (
         "treats 0.05 as a hard line, so p = 0.046 and p = 0.072 are seen "
         "as completely different findings",
         "Yes: 60 heads proves bias, 59 doesn't.",
+        "how much the evidence really changes between p = 0.046 and "
+        "p = 0.072",
     ),
     "PROVES_H0": (
         "thinks not rejecting H₀ proves H₀ is true",
         "With 59 heads the coin is fair.",
+        "what failing to reject H₀ does and does not tell us",
     ),
 }
 
@@ -379,6 +391,10 @@ FREE_TEXT_PROMPTS = {
         ),
         "labels": ("P_H0", "CHANCE", "ONE_MINUS_P", "NO_CONDITION",
                    "NO_EXTREME"),
+        "correct_if": (
+            "says the probability is computed assuming the coin is fair "
+            "(H₀ true) AND covers results at least as extreme as 60 heads"
+        ),
         "control_explanation": (
             "**How to read this p-value.** A p-value is always computed "
             "*assuming H₀ is true*. Here: if the coin were fair, results at "
@@ -418,6 +434,11 @@ FREE_TEXT_PROMPTS = {
         ),
         "labels": ("P_H0", "CHANCE", "ONE_MINUS_P", "NO_CONDITION",
                    "NO_EXTREME"),
+        "correct_if": (
+            "says the probability is computed assuming the machine really "
+            "pours 250 ml on average (H₀ true) AND covers sample means of "
+            "244 ml or lower"
+        ),
         "control_explanation": (
             "**How to read this p-value.** It is computed *assuming H₀ is "
             "true*: if the machine really poured 250 ml on average, a sample "
@@ -458,6 +479,11 @@ FREE_TEXT_PROMPTS = {
             "reject with 59 heads does not prove the coin is fair."
         ),
         "labels": ("HARD_THRESHOLD", "PROVES_H0"),
+        "correct_if": (
+            "says the two results give similar evidence (0.05 is a "
+            "convention, not a hard line) AND does not claim that either "
+            "result proves the coin is biased or fair"
+        ),
         "control_explanation": (
             "**Comparing p ≈ 0.046 and p ≈ 0.072.** One extra head changes "
             "the p-value only a little, so the two results carry very "
@@ -486,17 +512,20 @@ def build_free_text_system_prompt(prompt_id, reply_number):
     content = FREE_TEXT_PROMPTS[prompt_id]
     mistake_lines = "\n".join(
         f'- {label}: {MISCONCEPTIONS[label][0]} '
-        f'(e.g. "{MISCONCEPTIONS[label][1]}")'
+        f'(e.g. "{MISCONCEPTIONS[label][1]}"). '
+        f'Point at: {MISCONCEPTIONS[label][2]}.'
         for label in content["labels"]
     )
     later_reply_rule = (
         "This is your FIRST reply: do not give the full correct "
-        "interpretation or definition, not even partially."
+        "interpretation or definition, not even partially. Ask about the "
+        "missing piece; do not state it."
         if reply_number == 1
         else
-        f"This is reply number {reply_number}. If the learner is still "
-        "stuck, you may give a bit more help, but let them do the thinking "
-        "and still do not hand them a complete model answer."
+        f"This is reply number {reply_number}. Do not repeat your previous "
+        "question. If the learner improved, say what they now have right. "
+        "Give one new concrete hint before your question, but let them do "
+        "the thinking and still do not hand them a complete model answer."
     )
     return f"""
 You are a friendly statistics tutor in an interactive lesson on p-values
@@ -509,13 +538,19 @@ What a complete correct answer contains (for you only): {content["key_idea"]}
 Step 1 - classify. Decide which ONE label best describes the learner's
 LATEST message:
 {mistake_lines}
-- CORRECT: no mistake; the answer contains the key idea
+- CORRECT: ONLY if the answer {content["correct_if"]}. If a part is
+  missing, use the label for the missing part.
 - OTHER: off-topic, unclear, or a mistake not on this list
 
-Step 2 - give feedback aimed at that label:
-- Start by quoting the learner's own words in quotation marks (the part
-  that shows the issue), e.g. You wrote "4.6% chance the coin is fair".
-- Ask ONE guiding question that helps them notice the problem themselves.
+Step 2 - give feedback aimed at that label (what its "Point at" says):
+- The learner sees only the "feedback" text, not the "quote" field.
+  "feedback" must start with the learner's own words in quotation marks
+  (the part that shows the issue), e.g. You wrote "4.6% chance the coin
+  is fair".
+- Ask exactly ONE guiding question that helps them notice the problem
+  themselves: "feedback" must contain exactly one question mark.
+- Do not ask either/or questions where one option is the correct answer,
+  and in your first reply do not use the wording of the key idea.
 - {later_reply_rule}
 - If CORRECT: confirm it briefly and push their thinking further, e.g.
   "Would your reading change if p were 0.20?"
@@ -550,9 +585,21 @@ def get_free_text_reply(prompt_id, chat, ai_config):
     feedback = clean_model_text(str(data.get("feedback", "")))
     if not feedback:
         raise ValueError("The AI reply had no feedback text.")
+    quote = str(data.get("quote", "")).strip().strip('"“”')
+    # The model sometimes fills "quote" but does not quote the learner in
+    # the feedback itself; the learner only sees the feedback.
+    def simple(text):  # ignore case, unusual spaces, end punctuation
+        return re.sub(r"\s+", " ", text).strip(" .!?").lower()
+
+    learner = simple(chat[-1]["content"])
+    already_quoted = any(
+        simple(a or b) and simple(a or b) in learner
+        for a, b in re.findall(r'"([^"]+)"|“([^”]+)”', feedback))
+    if label != "CORRECT" and quote and not already_quoted:
+        feedback = f'You wrote "{quote.rstrip(" .")}". {feedback}'
     return {
         "label": label,
-        "quote": str(data.get("quote", "")).strip(),
+        "quote": quote,
         "feedback": feedback,
     }
 
@@ -593,10 +640,13 @@ def render_ai_tutor_chat(prompt_id, state, interactive):
     if learner_replies < MAX_LEARNER_REPLIES:
         with st.container():
             message = st.chat_input(
-                f"Reply to the tutor ({MAX_LEARNER_REPLIES - learner_replies}"
-                " left), or continue below",
+                "Reply or ask the tutor a question, then press ↑ "
+                f"({MAX_LEARNER_REPLIES - learner_replies} left)",
                 key=f"ft_{prompt_id}_chat_input",
             )
+        st.caption("The ↑ arrow (or Enter) sends your message to the "
+                   "tutor. When you are ready, revise your answer below: "
+                   "this ends the chat.")
         if message and message.strip():
             state["chat"].append({"role": "user",
                                   "content": message.strip()})
@@ -652,9 +702,12 @@ def render_free_text_activity(prompt_id):
         feedback_ready = True
 
     if state["stage"] == "feedback":
-        if st.button("Continue: revise my answer",
+        # AI version: secondary style so the chat box stands out more.
+        if st.button("Done with the tutor: revise my answer"
+                     if condition == "ai" else "Continue: revise my answer",
                      key=f"ft_{prompt_id}_to_revise",
-                     type="primary", disabled=not feedback_ready):
+                     type="secondary" if condition == "ai" else "primary",
+                     disabled=not feedback_ready):
             st.session_state[f"ft_{prompt_id}_revised"] = state["first"]
             state["stage"] = "revise"
             st.rerun()
@@ -665,6 +718,9 @@ def render_free_text_activity(prompt_id):
         revise_key = f"ft_{prompt_id}_revised"
         if revise_key not in st.session_state:
             st.session_state[revise_key] = state["first"]
+        st.caption("Rewrite your answer using the feedback. Your first "
+                   "answer is copied below so you can edit it. You revise "
+                   "once, then you see the model answer.")
         revised = st.text_area("Revise your answer", key=revise_key,
                                height=120)
         if st.button("Submit revised answer",
