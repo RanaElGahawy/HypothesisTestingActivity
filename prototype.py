@@ -693,23 +693,72 @@ def render_free_text_activity(prompt_id):
 # drafts for the team to finalise. Edit them here only.
 
 INFO_SHEET = """
-**What this study is about.** You will work through a short interactive
-lesson on hypothesis testing and p-values (about 30 minutes), with a short
-test before and after it. We compare two versions of the lesson.
+### Participant Information Sheet
+*Learning about hypothesis testing* · CS-411, EPFL
 
-**What we record.** Your answers in the lesson and the tests, the time you
-spend on each part and, where the lesson includes it, your messages with
-an AI tutor. Data are linked only to a participant code, not to your name.
+*Who we are.* We are three students (Mattéo Le Cué, Rana El Gahawy,
+Omar Idrissi) doing a course project in CS-411 at EPFL.
 
-**Your rights.** Taking part is voluntary. You can stop at any time
-without giving a reason, and ask us to delete your data. The data are used
-only for the CS-411 Digital Education course project.
+*What is this study about?* We are testing an interactive online lesson
+on hypothesis testing and comparing two versions of it. Your participation
+helps us understand how students learn this topic. No prior knowledge of
+statistics is needed.
 
-**Contact:**  Mattéo Le Cué - matteo.lecue@epfl.ch, Omar Idrissi - omar.idrissikaitouni@epfl.ch, Rana ElGahawy - rana.elgahawy@epfl.ch
+*What will you do?* You will complete, alone and in one sitting, about
+*40–45 minutes* of activities in this browser window:
+
+1. A pre-test (about 6 min).
+2. An interactive lesson (about 25 min) in which you answer questions in
+   your own words and receive feedback. Depending on your version, **the
+   feedback may be written by an AI language model**.
+3. A post-test and a short questionnaire with a few open questions
+   (about 10 min).
+
+This is not a graded exam and has no effect on your grades: we are
+evaluating the lesson, not you. Please use a laptop, do the session
+without breaks, and **do not use ChatGPT or other AI tools, notes or the
+web**.
+
+*What data do we collect?* Whether you have learned about p-values
+before, your answers, your messages to the AI (if your version includes a
+chat) and the time spent on each step. You are identified only by a code
+(e.g. P07). The list linking codes to names is kept separately by the
+team only.
+
+*Storage and use.* Answers are stored in a private storage that only the
+team can access. If your version includes AI feedback, your answers are
+sent to a language model hosted by EPFL (RCP AIaaS) to generate the reply,
+so please *do not write personal information* in your answers. The data
+are used only for this course project and reported in aggregate or as
+short quotes that cannot identify you.
+
+*Risks and benefits.* We expect no risks beyond everyday computer use.
+You may learn something about p-values and help improve a learning tool.
+
+*Your rights.*
+- Participation is *voluntary*.
+- You can *stop at any time* without giving a reason and without any
+  consequence.
+- You can ask us to *delete your data* by giving us your code, **until
+  30 November 2026**. After that, the list linking codes to names is
+  deleted and individual data can no longer be removed.
+- You can ask us any question before, during or after the study.
+
+*Contact:* Mattéo Le Cué - matteo.lecue@epfl.ch, Omar Idrissi -
+omar.idrissikaitouni@epfl.ch, Rana El Gahawy - rana.elgahawy@epfl.ch
+
+*By ticking the box below, you confirm that:*
+- you have read this information sheet and had the opportunity to ask
+  questions;
+- you understand that participation is voluntary and that you can withdraw
+  or have your data deleted until 30 November 2026;
+- you agree that your coded answers may be used for this project;
+- you will not use AI tools, notes or the web during the session;
+- you are 18 or older.
 """
 
 CONSENT_LABEL = (
-    "I have read the information above and agree to take part."
+    "I confirm all the statements above and agree to take part."
 )
 
 SCREENING_QUESTION = (
